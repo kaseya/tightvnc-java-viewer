@@ -81,8 +81,26 @@ public class VncViewer extends java.applet.Applet
   int port;
   String passwordParam;
   boolean showControls;
+  boolean showDisconnectButton;
+  boolean showOptionsButton;
+  boolean showClipboardButton;
+  boolean showRecordButton;
+  boolean showCtrlAltDelButton;
+  boolean showRefreshButton;
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Kaseya International Limited modification
+  // Fit to window feature. Enables applet to fit into browser window. If enabled, superceeds scaling.
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  boolean showFitToWindowButton;
+  boolean fitToWindow = false;
+  String browser = "unknown";
   boolean offerRelogin;
   boolean showOfflineDesktop;
+  String onConnectedHandler;
+  String onDisconnectedHandler;
+  String onErrorHandler;
+  String onBeforeShowButtonsHandler;
+  String onFitToWindowHandler;
   int deferScreenUpdates;
   int deferCursorUpdates;
   int deferUpdateRequests;
@@ -97,8 +115,11 @@ public class VncViewer extends java.applet.Applet
   //
 
   public void init() {
-
-    readParameters();
+	// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Kaseya International Limited modification
+	// Determine browser. Used to compensate for different browser behavior in Java applets.
+	// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	readParameters();
 
     refApplet = this;
 
@@ -129,6 +150,10 @@ public class VncViewer extends java.applet.Applet
       vncFrame.addWindowListener(this);
 
     rfbThread = new Thread(this);
+  }
+
+  public void start()
+  {
     rfbThread.start();
   }
 
@@ -149,8 +174,28 @@ public class VncViewer extends java.applet.Applet
     gbc.anchor = GridBagConstraints.NORTHWEST;
 
     if (showControls) {
-      buttonPanel = new ButtonPanel(this);
+	  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	  // Kaseya International Limited modification
+	  // Fit to window feature. Optionally show 'Fit window' button.
+	  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      buttonPanel = new ButtonPanel(this,
+                                    showDisconnectButton,
+                                    showOptionsButton,
+                                    showClipboardButton,
+                                    showRecordButton,
+                                    showCtrlAltDelButton,
+                                    showRefreshButton,
+	  	                            showFitToWindowButton);
+
       gridbag.setConstraints(buttonPanel, gbc);
+
+      // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      // Kaseya International Limited modification
+      // Invoke optional JavaScript 'on before show buttons' event handler
+      // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      invokeJavaScriptEventHandler(onBeforeShowButtonsHandler);
+
+
       vncContainer.add(buttonPanel);
     }
 
@@ -160,15 +205,15 @@ public class VncViewer extends java.applet.Applet
 
       // FIXME: Use auto-scaling not only in a separate frame.
       if (options.autoScale && inSeparateFrame) {
-	Dimension screenSize;
-	try {
-	  screenSize = vncContainer.getToolkit().getScreenSize();
-	} catch (Exception e) {
-	  screenSize = new Dimension(0, 0);
-	}
-	createCanvas(screenSize.width - 32, screenSize.height - 32);
+	    Dimension screenSize;
+	    try {
+	      screenSize = vncContainer.getToolkit().getScreenSize();
+	    } catch (Exception e) {
+	      screenSize = new Dimension(0, 0);
+	    }
+	    createCanvas(screenSize.width - 32, screenSize.height - 32);
       } else {
-	createCanvas(0, 0);
+	    createCanvas(0, 0);
       }
 
       gbc.weightx = 1.0;
@@ -176,38 +221,55 @@ public class VncViewer extends java.applet.Applet
 
       if (inSeparateFrame) {
 
-	// Create a panel which itself is resizeable and can hold
-	// non-resizeable VncCanvas component at the top left corner.
-	Panel canvasPanel = new Panel();
-	canvasPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
-	canvasPanel.add(vc);
+	    // Create a panel which itself is resizeable and can hold
+	    // non-resizeable VncCanvas component at the top left corner.
+	    Panel canvasPanel = new Panel();
+	    canvasPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
+	    canvasPanel.add(vc);
 
-	// Create a ScrollPane which will hold a panel with VncCanvas
-	// inside.
-	desktopScrollPane = new ScrollPane(ScrollPane.SCROLLBARS_AS_NEEDED);
-	gbc.fill = GridBagConstraints.BOTH;
-	gridbag.setConstraints(desktopScrollPane, gbc);
-	desktopScrollPane.add(canvasPanel);
+	    // Create a ScrollPane which will hold a panel with VncCanvas
+	    // inside.
+	    desktopScrollPane = new ScrollPane(ScrollPane.SCROLLBARS_AS_NEEDED);
+	    gbc.fill = GridBagConstraints.BOTH;
+	    gridbag.setConstraints(desktopScrollPane, gbc);
+	    desktopScrollPane.add(canvasPanel);
 
-	// Finally, add our ScrollPane to the Frame window.
-	vncFrame.add(desktopScrollPane);
-	vncFrame.setTitle(rfb.desktopName);
-	vncFrame.pack();
-	vc.resizeDesktopFrame();
+	    // Finally, add our ScrollPane to the Frame window.
+	    vncFrame.add(desktopScrollPane);
+	    vncFrame.setTitle(rfb.desktopName);
+	    vncFrame.pack();
+	    vc.resizeDesktopFrame();
 
       } else {
+	     // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		 // Kaseya International Limited modification
+		 // Fit to window feature. Use explicit gridbag constraints for each component.
+		 // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		 GridBagConstraints canvasConstraints = new GridBagConstraints();
+		 canvasConstraints.gridwidth = GridBagConstraints.REMAINDER;
+		 canvasConstraints.anchor = GridBagConstraints.NORTHWEST;
+		 canvasConstraints.weightx = 1.0;
+		 canvasConstraints.weighty = 1.0;
 
-	// Just add the VncCanvas component to the Applet.
-	gridbag.setConstraints(vc, gbc);
-	add(vc);
-	validate();
-
+         gridbag.setConstraints(vc, gbc);
+         add(vc);
+		 validate();
       }
 
-      if (showControls)
-	buttonPanel.enableButtons();
+      if (showControls) {
+	      buttonPanel.enableButtons();
+	  }
+
+        // Kaseya International Limited modification
+        // Invoke optional JavaScript 'on connected' event handler with screen
+        // width and height as arguments
+        // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        String[] argumentList = { Integer.toString(rfb.framebufferWidth),
+                Double.toString(rfb.framebufferHeight + this.getSize().getHeight() - vc.getSize().getHeight()) };
+        invokeJavaScriptEventHandler(onConnectedHandler, argumentList);
 
       moveFocusToDesktop();
+
       processNormalProtocol();
 
     } catch (NoRouteToHostException e) {
@@ -219,48 +281,57 @@ public class VncViewer extends java.applet.Applet
 		 host + ":" + port, e);
     } catch (EOFException e) {
       if (showOfflineDesktop) {
-	e.printStackTrace();
-	System.out.println("Network error: remote side closed connection");
-	if (vc != null) {
-	  vc.enableInput(false);
-	}
-	if (inSeparateFrame) {
-	  vncFrame.setTitle(rfb.desktopName + " [disconnected]");
-	}
-	if (rfb != null && !rfb.closed())
-	  rfb.close();
-	if (showControls && buttonPanel != null) {
-	  buttonPanel.disableButtonsOnDisconnect();
-	  if (inSeparateFrame) {
-	    vncFrame.pack();
-	  } else {
-	    validate();
-	  }
-	}
+	    e.printStackTrace();
+	    System.out.println("Network error: remote side closed connection");
+	    if (vc != null) {
+	      vc.enableInput(false);
+	    }
+	    if (inSeparateFrame) {
+	      vncFrame.setTitle(rfb.desktopName + " [disconnected]");
+	    }
+	    if (rfb != null && !rfb.closed()) {
+	      rfb.close();
+        }
+
+        if (showControls && buttonPanel != null) {
+	      buttonPanel.disableButtonsOnDisconnect();
+	      if (inSeparateFrame) {
+	        vncFrame.pack();
+	      } else {
+	        validate();
+	      }
+	    }
       } else {
-	fatalError("Network error: remote side closed connection", e);
+	    fatalError("Network error: remote side closed connection", e);
       }
     } catch (IOException e) {
       String str = e.getMessage();
       if (str != null && str.length() != 0) {
-	fatalError("Network Error: " + str, e);
+	    fatalError("Network Error: " + str, e);
       } else {
-	fatalError(e.toString(), e);
+	    fatalError(e.toString(), e);
       }
     } catch (Exception e) {
       String str = e.getMessage();
       if (str != null && str.length() != 0) {
-	fatalError("Error: " + str, e);
+	    fatalError("Error: " + str, e);
       } else {
-	fatalError(e.toString(), e);
+	    fatalError(e.toString(), e);
       }
     }
-    
+
   }
 
-  //
-  // Create a VncCanvas instance.
-  //
+	//
+	// Create a VncCanvas instance.
+	//
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Kaseya International Limited modification
+    // Note that this method may also fail if the Java
+    // VM runs out of memory or the peer component is not displayable.
+    // Both of these errors result in a "Warning: Java 2D API is not
+    // available" error, which is not the case.
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   void createCanvas(int maxWidth, int maxHeight) throws IOException {
     // Determine if Java 2D API is available and use a special
@@ -275,10 +346,11 @@ public class VncViewer extends java.applet.Applet
       java.lang.reflect.Constructor cstr = cl.getConstructor(argClasses);
       Object[] argObjects =
         { this, new Integer(maxWidth), new Integer(maxHeight) };
-      vc = (VncCanvas)cstr.newInstance(argObjects);
-    } catch (Exception e) {
-      System.out.println("Warning: Java 2D API is not available");
-    }
+			vc = (VncCanvas) cstr.newInstance(argObjects);
+		} catch (Exception e) {
+			System.out.println("Warning: Java 2D API is not available");
+			e.printStackTrace(System.out);
+		}
 
     // If we failed to create VncCanvas2D, use old VncCanvas.
     if (vc == null)
@@ -291,7 +363,7 @@ public class VncViewer extends java.applet.Applet
   // If the rfbThread is being stopped, ignore any exceptions,
   // otherwise rethrow the exception so it can be handled.
   //
- 
+
   void processNormalProtocol() throws Exception {
     try {
       vc.processNormalProtocol();
@@ -452,6 +524,7 @@ public class VncViewer extends java.applet.Applet
     System.out.println("Desktop name is " + rfb.desktopName);
     System.out.println("Desktop size is " + rfb.framebufferWidth + " x " +
 		       rfb.framebufferHeight);
+
 
     setEncodings();
 
@@ -711,18 +784,59 @@ public class VncViewer extends java.applet.Applet
     if (str != null && str.equalsIgnoreCase("No"))
       showControls = false;
 
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Kaseya International Limited modification
+    // The modification adds supports for optionally enabling/disabling
+    // buttons on the Applet control
+    // panel via parameters.
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // "Show Disconnect Button" set to "No" hides Disconnect button on button panel.
+    showDisconnectButton = shouldDisplayControl("Show Disconnect Button");
+
+    // "Show Options Button" set to "No" hides Options button on button panel.
+    showOptionsButton = shouldDisplayControl("Show Options Button");
+
+    // "Show Clipboard Button" set to "No" hides Clipboard button on button panel.
+    showClipboardButton = shouldDisplayControl("Show Clipboard Button");
+
+    // "Show Record Button" set to "No" hides Record button on button panel.
+    showRecordButton = shouldDisplayControl("Show Record Button");
+
+    // "Show Control Alt Del Button" set to "No" hides Control Alt Del button on button panel.
+    showCtrlAltDelButton = shouldDisplayControl("Show Control Alt Del Button");
+
+    // "Show Refresh Button" set to "No" hides Refresh button on button panel.
+    showRefreshButton = shouldDisplayControl("Show Refresh Button");
+
+	// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Kaseya International Limited modification
+	// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // "Show Fit window" Button set to "No" hides Fit window button on button panel.
+    showFitToWindowButton = shouldDisplayControl("Show Fit Window Button");
+
     // "Offer Relogin" set to "No" disables "Login again" and "Close
     // window" buttons under error messages in applet mode.
-    offerRelogin = true;
-    str = readParameter("Offer Relogin", false);
-    if (str != null && str.equalsIgnoreCase("No"))
-      offerRelogin = false;
+    offerRelogin = shouldDisplayControl("Offer Relogin");
 
     // Do we continue showing desktop on remote disconnect?
-    showOfflineDesktop = false;
-    str = readParameter("Show Offline Desktop", false);
-    if (str != null && str.equalsIgnoreCase("Yes"))
-      showOfflineDesktop = true;
+    showOfflineDesktop = shouldDisplayControl("Show Offline Desktop");
+
+    // Optional JavaScript callback on connect
+    onConnectedHandler = getHandlerName("On Connected");
+
+    // Optional JavaScript callback on normal disconnect
+    onDisconnectedHandler = getHandlerName("On Disconnected");
+
+    // Optional JavaScript callback on error
+    onErrorHandler = getHandlerName("On Error");
+
+    // Optional JavaScript callback on before show buttons
+    onBeforeShowButtonsHandler = getHandlerName("On Before Show Buttons");
+
+    // Optional JavaScript callback when fit to window button is clicked
+    onFitToWindowHandler = getHandlerName("On Fit To Window");
+
 
     // Fine tuning options.
     deferScreenUpdates = readIntParameter("Defer screen updates", 20);
@@ -736,6 +850,26 @@ public class VncViewer extends java.applet.Applet
     // SocketFactory.
     socketFactory = readParameter("SocketFactory", false);
   }
+      // Utility method to determine if a control is configured to be displayed.
+      private boolean shouldDisplayControl(final String controlName) {
+          String str = readParameter(controlName, false);
+
+          if (str != null) {
+              if (str.equalsIgnoreCase("Yes")) {
+                 return true;
+              }
+              if (str.equalsIgnoreCase("No")) {
+                  return false;
+              }
+          }
+          return false;
+      }
+
+      // Utility method to obtain a handler callback name
+      private String getHandlerName(String handler) {
+          String str = readParameter(handler, false);
+          return str != null ? str : "";
+      }
 
   //
   // Read password parameters. If an "ENCPASSWORD" parameter is set,
@@ -849,22 +983,35 @@ public class VncViewer extends java.applet.Applet
           System.out.println("Pixel data: " + vc.statNumBytesDecoded +
                              " bytes, " + vc.statNumBytesEncoded +
                              " compressed, ratio " + ratio);
-      }
-    }
-
-    if (rfb != null && !rfb.closed())
-      rfb.close();
-    options.dispose();
-    clipboard.dispose();
-    if (rec != null)
-      rec.dispose();
+			}
+            vc.enableInput(false);
+		}
 
     if (inAnApplet) {
       showMessage("Disconnected");
+
+        // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Kaseya International Limited modification
+        // Invoke optional JavaScript 'on disconnected' event handler
+        // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        invokeJavaScriptEventHandler(onDisconnectedHandler);
     } else {
-      System.exit(0);
+	    System.exit(0);
+	}
+    if (rfb != null && !rfb.closed() ) {
+        rfb.close();
     }
-  }
+    if ( options != null ) {
+        options.dispose();
+    }
+    if ( clipboard != null ) {
+        clipboard.dispose();
+    }
+    if (rec != null)  {
+        rec.dispose();
+    }
+
+}
 
   //
   // fatalError() - print out a fatal error message.
@@ -873,6 +1020,14 @@ public class VncViewer extends java.applet.Applet
 
   synchronized public void fatalError(String str) {
     System.out.println(str);
+
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Kaseya International Limited modification
+    // Invoke optional JavaScript 'on error' event handler
+    // with the exception details
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    String[] argumentList = { "\"" + str + "\""};
+    invokeJavaScriptEventHandler(onErrorHandler, argumentList);
 
     if (inAnApplet) {
       // vncContainer null, applet not inited,
@@ -884,7 +1039,15 @@ public class VncViewer extends java.applet.Applet
   }
 
   synchronized public void fatalError(String str, Exception e) {
- 
+
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Kaseya International Limited modification
+    // Invoke optional JavaScript 'on error' event handler
+    // with the exception details
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    String[] argumentList = { "\"" + str + "\""};
+    invokeJavaScriptEventHandler(onErrorHandler, argumentList);
+
     if (rfb != null && rfb.closed()) {
       // Not necessary to show error message if the error was caused
       // by I/O problems after the rfb.close() method call.
@@ -902,6 +1065,37 @@ public class VncViewer extends java.applet.Applet
       showMessage(str);
     } else {
       System.exit(1);
+    }
+  }
+
+  void invokeJavaScriptEventHandler(String eventHandler) {
+    invokeJavaScriptEventHandler(eventHandler,null /* no arguments */);
+  }
+
+  // Overload that passes arguments to the JavaScript event handler
+  void invokeJavaScriptEventHandler(String eventHandler,String[] argumentList) {
+    try {
+      if (inAnApplet && eventHandler != null && !(eventHandler.length() == 0)) {
+        // Construct argument string from argument list
+        StringBuilder argumentString = new StringBuilder();
+
+        if (argumentList != null && argumentList.length > 0) {
+
+          argumentString.append(argumentList[0]);
+
+          for(int i=1; i < argumentList.length; ++i) {
+            argumentString.append(",");
+            argumentString.append(argumentList[i]);
+            }
+          }
+
+        // Invoke JavaScript
+        getAppletContext().showDocument
+          (new URL("javascript:"+eventHandler+"(" + argumentString.toString() + ");"),"_self");
+        }
+    }
+    catch (MalformedURLException malformedException) {
+      // Ignore failure
     }
   }
 
@@ -950,6 +1144,8 @@ public class VncViewer extends java.applet.Applet
   public void stop() {
     System.out.println("Stopping applet");
     rfbThread = null;
+    disconnect();
+
   }
 
   //
@@ -959,15 +1155,48 @@ public class VncViewer extends java.applet.Applet
   public void destroy() {
     System.out.println("Destroying applet");
 
-    vncContainer.removeAll();
-    options.dispose();
-    clipboard.dispose();
+    if (vncContainer != null)
+        vncContainer.removeAll();
+    if (options != null)
+        options.dispose();
+    if (clipboard != null)
+        clipboard.dispose();
     if (rec != null)
-      rec.dispose();
+        rec.dispose();
     if (rfb != null && !rfb.closed())
-      rfb.close();
+        rfb.close();
     if (inSeparateFrame)
-      vncFrame.dispose();
+        vncFrame.dispose();
+    if (vc != null) {
+        vc.destroy();
+    }
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Kaseya International Limited modification
+    // Additional clean up code added below here.
+    // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    rfb = null;
+    rfbThread = null;
+    vncFrame = null;
+    desktopScrollPane = null;
+    gridbag = null;
+    buttonPanel = null;
+    connStatusLabel = null;
+    vc = null;
+    clipboard = null;
+    options = null;
+    rec = null;
+    recordingSync = null;
+    sessionFileName = null;
+    cursorUpdatesDef = null;
+    eightBitColorsDef = null;
+    socketFactory = null;
+    host = null;
+    passwordParam = null;
+    onConnectedHandler = null;
+    onDisconnectedHandler = null;
+    onErrorHandler = null;
+    onBeforeShowButtonsHandler = null;
+
   }
 
   //
@@ -992,6 +1221,59 @@ public class VncViewer extends java.applet.Applet
     if (!inAnApplet) {
       System.exit(0);
     }
+  }
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Kaseya International Limited modification
+  // New methods for Fit window feature: toggleFitToWindow, setSize and determineBrowser.
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  public void toggleFitToWindow() {
+    fitToWindow = !fitToWindow;
+  }
+
+
+  public void resize(int width,int height) {
+        try{
+            if(vc != null){
+                super.resize(width,height);
+                vc.fitAppletToWindow(fitToWindow);
+	  }
+	} catch(Exception e ) {
+		System.out.println("VnCViewer::setSize error:" + e.getMessage() );
+	}
+  }
+
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Kaseya International Limited modification
+  // New method to send control alt delete message
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  public void sendCtrlAltDel() {
+    try {
+        final int modifiers = InputEvent.CTRL_MASK | InputEvent.ALT_MASK;
+
+        KeyEvent ctrlAltDelEvent =
+          new KeyEvent(this, KeyEvent.KEY_PRESSED, 0, modifiers, 127);
+        this.rfb.writeKeyEvent(ctrlAltDelEvent);
+
+        ctrlAltDelEvent =
+          new KeyEvent(this, KeyEvent.KEY_RELEASED, 0, modifiers, 127);
+        this.rfb.writeKeyEvent(ctrlAltDelEvent);
+
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+  }
+  
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Kaseya International Limited modification
+  // New method to refresh the display
+  // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  public synchronized void refreshDisplay() {
+    System.out.print("VncViewer:Sync\n");
+	try {
+		this.rfb.writeFramebufferUpdateRequest(0, 0, this.rfb.framebufferWidth, this.rfb.framebufferHeight, false);
+	} catch (IOException e) {
+		e.printStackTrace();
+	}
   }
 
   //

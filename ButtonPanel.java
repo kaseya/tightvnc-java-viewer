@@ -28,7 +28,7 @@ import java.awt.event.*;
 import java.io.*;
 
 class ButtonPanel extends Panel implements ActionListener {
-
+  static String fitToWindowLabel = "Fit to Window";
   VncViewer viewer;
   Button disconnectButton;
   Button optionsButton;
@@ -36,35 +36,66 @@ class ButtonPanel extends Panel implements ActionListener {
   Button clipboardButton;
   Button ctrlAltDelButton;
   Button refreshButton;
+  Button fitToWindowButton;
 
-  ButtonPanel(VncViewer v) {
+  ButtonPanel(VncViewer v,
+              boolean showDisconnectButton,
+              boolean showOptionsButton,
+              boolean showClipboardButton,
+              boolean showRecordButton,
+              boolean showCtrlAltDelButton,
+              boolean showRefreshButton,
+	          boolean showFitToScreenButton) {
     viewer = v;
 
     setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
-    disconnectButton = new Button("Disconnect");
-    disconnectButton.setEnabled(false);
-    add(disconnectButton);
-    disconnectButton.addActionListener(this);
-    optionsButton = new Button("Options");
-    add(optionsButton);
-    optionsButton.addActionListener(this);
-    clipboardButton = new Button("Clipboard");
-    clipboardButton.setEnabled(false);
-    add(clipboardButton);
-    clipboardButton.addActionListener(this);
-    if (viewer.rec != null) {
-      recordButton = new Button("Record");
-      add(recordButton);
-      recordButton.addActionListener(this);
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // 01/29/2010 - A modification was made here by Kaseya International Limited to the 1.3.10 source.
+    // The modification adds supports for optionally enabling/disabling buttons on the Applet control
+    // panel via parameters.
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    if(showDisconnectButton) {
+        disconnectButton = new Button("Disconnect");
+        disconnectButton.setEnabled(false);
+        add(disconnectButton);
+        disconnectButton.addActionListener(this);
     }
-    ctrlAltDelButton = new Button("Send Ctrl-Alt-Del");
-    ctrlAltDelButton.setEnabled(false);
-    add(ctrlAltDelButton);
-    ctrlAltDelButton.addActionListener(this);
-    refreshButton = new Button("Refresh");
-    refreshButton.setEnabled(false);
-    add(refreshButton);
-    refreshButton.addActionListener(this);
+    if(showOptionsButton) {
+        optionsButton = new Button("Options");
+        add(optionsButton);
+        optionsButton.addActionListener(this);
+    }
+    if(showClipboardButton) {
+        clipboardButton = new Button("Clipboard");
+        clipboardButton.setEnabled(false);
+        add(clipboardButton);
+        clipboardButton.addActionListener(this);
+    }
+    if(showRecordButton && viewer.rec != null) {
+        recordButton = new Button("Record");
+        add(recordButton);
+        recordButton.addActionListener(this);
+    }
+    if(showCtrlAltDelButton) {
+        ctrlAltDelButton = new Button("Send Ctrl-Alt-Del");
+        ctrlAltDelButton.setEnabled(false);
+        add(ctrlAltDelButton);
+        ctrlAltDelButton.addActionListener(this);
+    }
+    if(showRefreshButton) {
+        refreshButton = new Button("Refresh");
+        refreshButton.setEnabled(false);
+        add(refreshButton);
+        refreshButton.addActionListener(this);
+    }
+    if(showFitToScreenButton) {
+	    fitToWindowButton = new Button( fitToWindowLabel );
+	    fitToWindowButton.setEnabled(false);
+	    add(fitToWindowButton);
+	    fitToWindowButton.addActionListener(this);
+    }
   }
 
   //
@@ -72,9 +103,18 @@ class ButtonPanel extends Panel implements ActionListener {
   //
 
   public void enableButtons() {
-    disconnectButton.setEnabled(true);
-    clipboardButton.setEnabled(true);
-    refreshButton.setEnabled(true);
+    if(disconnectButton != null) {
+        disconnectButton.setEnabled(true);
+    }
+    if(clipboardButton != null) {
+        clipboardButton.setEnabled(true);
+    }
+    if(refreshButton != null) {
+        refreshButton.setEnabled(true);
+    }
+	if(fitToWindowButton != null) {
+		fitToWindowButton.setEnabled(true);
+	}
   }
 
   //
@@ -82,17 +122,28 @@ class ButtonPanel extends Panel implements ActionListener {
   //
 
   public void disableButtonsOnDisconnect() {
-    remove(disconnectButton);
-    disconnectButton = new Button("Hide desktop");
-    disconnectButton.setEnabled(true);
-    add(disconnectButton, 0);
-    disconnectButton.addActionListener(this);
-
-    optionsButton.setEnabled(false);
-    clipboardButton.setEnabled(false);
-    ctrlAltDelButton.setEnabled(false);
-    refreshButton.setEnabled(false);
-
+    if(disconnectButton != null) {
+        remove(disconnectButton);
+        disconnectButton = new Button("Hide desktop");
+        disconnectButton.setEnabled(true);
+        add(disconnectButton, 0);
+        disconnectButton.addActionListener(this);
+    }
+    if(optionsButton != null) {
+        optionsButton.setEnabled(false);
+    }
+    if(clipboardButton != null) {
+        clipboardButton.setEnabled(false);
+    }
+    if(ctrlAltDelButton != null) {
+        ctrlAltDelButton.setEnabled(false);
+    }
+    if(refreshButton != null) {
+        refreshButton.setEnabled(false);
+    }
+	if(fitToWindowButton != null) {
+		fitToWindowButton.setEnabled(false);
+	}
     validate();
   }
 
@@ -102,7 +153,9 @@ class ButtonPanel extends Panel implements ActionListener {
   //
 
   public void enableRemoteAccessControls(boolean enable) {
-    ctrlAltDelButton.setEnabled(enable);
+    if(ctrlAltDelButton != null) {
+        ctrlAltDelButton.setEnabled(enable);
+    }
   }
 
   //
@@ -126,29 +179,14 @@ class ButtonPanel extends Panel implements ActionListener {
       viewer.clipboard.setVisible(!viewer.clipboard.isVisible());
 
     } else if (evt.getSource() == ctrlAltDelButton) {
-      try {
-        final int modifiers = InputEvent.CTRL_MASK | InputEvent.ALT_MASK;
-
-        KeyEvent ctrlAltDelEvent =
-          new KeyEvent(this, KeyEvent.KEY_PRESSED, 0, modifiers, 127);
-        viewer.rfb.writeKeyEvent(ctrlAltDelEvent);
-
-        ctrlAltDelEvent =
-          new KeyEvent(this, KeyEvent.KEY_RELEASED, 0, modifiers, 127);
-        viewer.rfb.writeKeyEvent(ctrlAltDelEvent);
-
-      } catch (IOException e) {
-        e.printStackTrace();
-      }
+      viewer.sendCtrlAltDel();
     } else if (evt.getSource() == refreshButton) {
-      try {
-	RfbProto rfb = viewer.rfb;
-	rfb.writeFramebufferUpdateRequest(0, 0, rfb.framebufferWidth,
-					  rfb.framebufferHeight, false);
-      } catch (IOException e) {
-        e.printStackTrace();
-      }
+      viewer.refreshDisplay();
     }
+	else if ( evt.getSource() == fitToWindowButton){
+		viewer.toggleFitToWindow();
+		fitToWindowButton.setLabel(fitToWindowButton.getLabel().equalsIgnoreCase(fitToWindowLabel) ? "Actual size" : fitToWindowLabel);
+	}
   }
 }
 
